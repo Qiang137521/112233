@@ -18,7 +18,7 @@ os.makedirs(OUT, exist_ok=True)
 # ---------------- 参数 ----------------
 TOTAL_H = 200.0
 L, D, BH = 100.0, 64.0, 26.0       # 篮子外形 长/宽/高
-CORNER_R = 3.5                     # 篮子圆角
+CORNER_R = 10.0                    # 篮子圆角
 WALL, FLOOR = 1.6, 2.0             # 壁厚 / 底厚
 LEVELS = [28.0, 88.0, 148.0]       # 三个篮子底面离地高度
 POST_R = 5.0                       # 立柱半径 (圆管)
@@ -58,8 +58,12 @@ def basket():
             holes.append(Manifold.cube([s, s, FLOOR + 1]).translate([x - s / 2, y - s / 2, -0.5]))
     body = body - Manifold.batch_boolean(holes, OpType.Add)
     # 两端插销 (代替螺丝)，末端倒角方便压入
+    cavity = Manifold.extrude(inner, BH).translate([0, 0, FLOOR])
     for sx in (-1, 1):
         for sy in (-1, 1):
+            # 圆角处补一个小凸台，让端面平贴立柱
+            pad = cyl_x(3.0, 8.0, L / 2 - 3.0, sy * PY, BH / 2).scale([sx, 1, 1]) - cavity
+            body = body + pad
             peg = Manifold.cylinder(PEG_LEN, PEG_D / 2) + \
                 Manifold.cylinder(0.5, PEG_D / 2, PEG_D / 2 - 0.5).translate([0, 0, PEG_LEN])
             peg = peg.translate([0, 0, -0.5])  # 嵌入端墙 0.5 mm
