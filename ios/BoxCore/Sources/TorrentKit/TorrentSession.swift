@@ -511,7 +511,9 @@ actor TorrentSession {
         while peers.count + connecting.count < TorrentSession.maxPeers,
               connecting.count < TorrentSession.maxConnecting, !candidates.isEmpty {
             let addr = candidates.removeFirst()
-            if let f = failedAt[addr], now.timeIntervalSince(f) < 120 { skipped.append(addr); continue }
+            if let f = failedAt[addr], now.timeIntervalSince(f) < TorrentSession.retryDelay(failCount[addr] ?? 0) {
+                skipped.append(addr); continue
+            }
             connecting.insert(addr)
             peerTasks[addr] = Task { [weak self] in await self?.runPeer(addr) }
         }
@@ -545,6 +547,11 @@ actor TorrentSession {
         peerGone(peer)
         peerTasks[addr] = nil
         if lived < 30 { noteFailure(addr) } else { failCount[addr] = nil; failedAt[addr] = Date(); candidates.append(addr) }
+    }
+
+    /// 10 s, 30 s, then 2 min between attempts to the same peer.
+    static func retryDelay(_ failures: Int) -> TimeInterval {
+        switch failures { case 0, 1: return 10; case 2: return 30; default: return 120 }
     }
 
     /// Retries a peer a few times with back-off before forgetting it.

@@ -10,7 +10,24 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 PKG="$HERE/.."
 PY="${PYTHON:-python3}"
 WORK="$(mktemp -d)"
-trap 'kill $(jobs -p) 2>/dev/null || true; rm -rf "$WORK"' EXIT
+cleanup() {
+  status=$?
+  if [ $status -ne 0 ]; then
+    echo "---- seeder log"; tail -20 "$WORK/seeder.log" 2>/dev/null || true
+    for f in "$WORK"/*.log; do echo "---- $f"; tail -30 "$f"; done
+  fi
+  kill $(jobs -p) 2>/dev/null || true
+  rm -rf "$WORK"
+}
+trap cleanup EXIT
+
+wait_port() {
+  for _ in $(seq 1 60); do
+    (exec 3<>"/dev/tcp/127.0.0.1/$1") 2>/dev/null && return 0
+    sleep 0.5
+  done
+  echo "port $1 never opened"; return 1
+}
 
 (cd "$PKG" && swift build --product boxcli)
 BIN="$(cd "$PKG" && swift build --show-bin-path)/boxcli"
@@ -18,16 +35,20 @@ BIN="$(cd "$PKG" && swift build --show-bin-path)/boxcli"
 "$PY" "$HERE/seeder.py" "$WORK" 51413 > "$WORK/seeder.log" 2>&1 &
 "$PY" "$HERE/throttle.py" 51420 51413 600000 &
 for _ in $(seq 1 60); do grep -q INFOHASH "$WORK/seeder.log" 2>/dev/null && break; sleep 0.5; done
+wait_port 51413
+wait_port 51420
 HASH="$(grep INFOHASH "$WORK/seeder.log" | awk '{print $2}')"
 SRC="$WORK/seed/测试 Pack"
 echo "infohash $HASH"
 
 echo "== 1. .torrent download"
-timeout 120 "$BIN" download "$WORK/test.torrent" "$WORK/dl1" --peer 127.0.0.1:51413 --timeout 100 | tail -1
+timeout 120 "$BIN" download "$WORK/test.torrent" "$WORK/dl1" --peer 127.0.0.1:51413 --timeout 100 > "$WORK/dl1.log"
+tail -1 "$WORK/dl1.log"
 diff -r "$SRC" "$WORK/dl1/测试 Pack"
 
 echo "== 2. magnet download"
-timeout 120 "$BIN" download "magnet:?xt=urn:btih:$HASH&dn=test&x.pe=127.0.0.1:51413" "$WORK/dl2" --timeout 100 | tail -1
+timeout 120 "$BIN" download "magnet:?xt=urn:btih:$HASH&dn=test&x.pe=127.0.0.1:51413" "$WORK/dl2" --timeout 100 > "$WORK/dl2.log"
+tail -1 "$WORK/dl2.log"
 diff -r "$SRC" "$WORK/dl2/测试 Pack"
 
 echo "== 3. streaming while downloading (throttled)"
@@ -44,7 +65,8 @@ diff -r "$SRC" "$WORK/dl3/测试 Pack"
 
 echo "== 4. interrupt and resume"
 timeout 6 "$BIN" download "$WORK/test.torrent" "$WORK/dl4" --peer 127.0.0.1:51420 > /dev/null || true
-timeout 120 "$BIN" download "$WORK/test.torrent" "$WORK/dl4" --peer 127.0.0.1:51420 --timeout 100 | tail -1
+timeout 120 "$BIN" download "$WORK/test.torrent" "$WORK/dl4" --peer 127.0.0.1:51420 --timeout 100 > "$WORK/dl4.log"
+tail -1 "$WORK/dl4.log"
 diff -r "$SRC" "$WORK/dl4/测试 Pack"
 
 echo "ALL E2E TESTS PASSED"
