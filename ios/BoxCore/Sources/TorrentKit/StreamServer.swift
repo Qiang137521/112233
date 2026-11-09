@@ -19,12 +19,12 @@ final class StreamServer: @unchecked Sendable {
         let bootstrap = ServerBootstrap(group: Net.group)
             .serverChannelOption(ChannelOptions.backlog, value: 64)
             .serverChannelOption(ChannelOptions.socketOption(.so_reuseaddr), value: 1)
+            .childChannelOption(ChannelOptions.tcpOption(.tcp_nodelay), value: 1)
             .childChannelInitializer { ch in
                 ch.pipeline.configureHTTPServerPipeline(withErrorHandling: true).flatMap {
                     ch.pipeline.addHandler(StreamHandler(engine: engineRef))
                 }
             }
-            .childChannelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
         let ch = try await bootstrap.bind(host: "127.0.0.1", port: 0).get()
         channel = ch
         port = ch.localAddress?.port ?? 0

@@ -186,7 +186,6 @@ final class PeerConnection: @unchecked Sendable {
         let c = cont!
         let channel = try await ClientBootstrap(group: Net.group)
             .connectTimeout(timeout)
-            .channelOption(ChannelOptions.socketOption(.tcp_nodelay), value: 1)
             .channelInitializer { ch in
                 ch.eventLoop.makeCompletedFuture {
                     try ch.pipeline.syncOperations.addHandlers([ByteToMessageHandler(PeerFrameDecoder()), FrameBridge(c)])
