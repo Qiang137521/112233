@@ -27,4 +27,14 @@ final class BencodeTests: XCTestCase {
         let c = Bitfield(count: 10, data: Data([0xff, 0xff]))
         XCTAssertEqual(c.setCount, 10)
     }
+
+    func testParseRange() {
+        XCTAssertEqual(StreamHandlerTestHooks.parseRange("bytes=0-99", length: 1000), 0...99)
+        XCTAssertEqual(StreamHandlerTestHooks.parseRange("bytes=-100", length: 1000), 900...999)
+        XCTAssertEqual(StreamHandlerTestHooks.parseRange("bytes=900-", length: 1000), 900...999)
+        XCTAssertEqual(StreamHandlerTestHooks.parseRange("bytes=-100", length: 50), 0...49)
+        XCTAssertNil(StreamHandlerTestHooks.parseRange("bytes=-100", length: 0))
+        XCTAssertNil(StreamHandlerTestHooks.parseRange("bytes=0-", length: 0))
+        XCTAssertNil(StreamHandlerTestHooks.parseRange("bytes=2000-", length: 1000))
+    }
 }

@@ -9,7 +9,7 @@ import ArchiveKit
 
 let args = CommandLine.arguments
 func usage() -> Never {
-    print("usage: boxcli download <torrent|magnet> <dir> [--peer host:port] [--stream fileIndex] [--timeout seconds]")
+    print("usage: boxcli download <torrent|magnet> <dir> [--peer host:port] [--stream fileIndex|name] [--timeout seconds]")
     print("       boxcli extract <archive> <dir> [password]")
     print("       boxcli info <torrent>")
     exit(2)
@@ -49,11 +49,16 @@ case "download":
     let timeout = Double(option("--timeout") ?? "600") ?? 600
     let start = Date()
 
-    if let s = option("--stream"), let fileIndex = Int(s) {
+    if let s = option("--stream") {
         // Wait for metadata, then fetch the file through the streaming server.
         while await engine.status(id)?.hasMetadata != true {
             try await Task.sleep(nanoseconds: 200_000_000)
             if Date().timeIntervalSince(start) > timeout { print("timeout waiting for metadata"); exit(1) }
+        }
+        // Accept either an index or a file name (file order differs between torrent creators).
+        let files = await engine.files(id)
+        guard let fileIndex = Int(s) ?? files.first(where: { $0.path.hasSuffix(s) })?.id else {
+            print("no file matching \(s)"); exit(1)
         }
         let url = try await engine.playbackURL(id, file: fileIndex)
         print("STREAM_URL \(url.absoluteString)")

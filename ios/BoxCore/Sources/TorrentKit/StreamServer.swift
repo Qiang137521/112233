@@ -86,7 +86,8 @@ private final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
 
     /// Parses "bytes=a-b", "bytes=a-" and "bytes=-n".
     static func parseRange(_ header: String?, length: Int64) -> ClosedRange<Int64>? {
-        guard let header, header.hasPrefix("bytes=") else { return nil }
+        // An empty file has no satisfiable byte range (and 0...-1 would trap).
+        guard length > 0, let header, header.hasPrefix("bytes=") else { return nil }
         let spec = header.dropFirst(6).split(separator: ",").first.map(String.init) ?? ""
         let parts = spec.split(separator: "-", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) }
         guard parts.count == 2 else { return nil }
@@ -111,7 +112,7 @@ private final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
         if let r = parseRange(head.headers.first(name: "Range"), length: length) {
             range = r
             status = .partialContent
-        } else if head.headers.first(name: "Range") != nil {
+        } else if head.headers.first(name: "Range") != nil && length > 0 {
             respond(channel, status: .rangeNotSatisfiable); return
         }
 
@@ -144,5 +145,12 @@ private final class StreamHandler: ChannelInboundHandler, @unchecked Sendable {
             try await channel.writeAndFlush(HTTPServerResponsePart.end(nil)).get()
         } catch {}
         channel.close(promise: nil)
+    }
+}
+
+/// Exposes pure helpers of the private HTTP handler to unit tests.
+enum StreamHandlerTestHooks {
+    static func parseRange(_ header: String?, length: Int64) -> ClosedRange<Int64>? {
+        StreamHandler.parseRange(header, length: length)
     }
 }

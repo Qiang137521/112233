@@ -53,7 +53,7 @@ grep -E "DONE|timeout" "$WORK/dl2.log"
 diff -r "$SRC" "$WORK/dl2/测试 Pack"
 
 echo "== 3. streaming while downloading (throttled)"
-"$BIN" download "magnet:?xt=urn:btih:$HASH&x.pe=127.0.0.1:51420" "$WORK/dl3" --stream 3 --linger 5 --timeout 200 > "$WORK/dl3.log" 2>&1 &
+"$BIN" download "magnet:?xt=urn:btih:$HASH&x.pe=127.0.0.1:51420" "$WORK/dl3" --stream video.mp4 --linger 5 --timeout 200 > "$WORK/dl3.log" 2>&1 &
 for _ in $(seq 1 60); do grep -q STREAM_URL "$WORK/dl3.log" && break; sleep 0.5; done
 URL="$(grep STREAM_URL "$WORK/dl3.log" | awk '{print $2}')"
 case "$URL" in http://*) ;; *) echo "expected http stream url, got $URL"; exit 1;; esac
