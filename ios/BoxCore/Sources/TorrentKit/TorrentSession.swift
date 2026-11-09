@@ -51,6 +51,12 @@ struct ResumeData: Codable {
     var peers: [String]?
 }
 
+/// Set TORRENTKIT_DEBUG=1 to log peer connection events to stderr (used by the CLI / CI).
+let debugLogging = ProcessInfo.processInfo.environment["TORRENTKIT_DEBUG"] != nil
+func debugLog(_ s: @autoclosure () -> String) {
+    if debugLogging { FileHandle.standardError.write(Data(("[torrentkit] " + s() + "\n").utf8)) }
+}
+
 private struct BlockKey: Hashable { let piece: Int; let begin: Int }
 
 private final class Peer {
@@ -527,6 +533,7 @@ actor TorrentSession {
         do {
             conn = try await PeerConnection.connect(to: addr)
         } catch {
+            debugLog("connect \(addr) failed: \(error)")
             connecting.remove(addr)
             peerTasks[addr] = nil
             noteFailure(addr)
@@ -537,12 +544,16 @@ actor TorrentSession {
         let peer = Peer(conn: conn)
         peers[ObjectIdentifier(peer)] = peer
         conn.send(Wire.handshake(infoHash: infoHash, peerId: peerId))
+        debugLog("connected \(addr)")
         do {
             for try await frame in conn.frames {
                 if peer.closed { break }
                 try handle(frame, from: peer)
             }
-        } catch {}
+            debugLog("peer \(addr) closed the connection")
+        } catch {
+            debugLog("peer \(addr) dropped: \(error)")
+        }
         let lived = Date().timeIntervalSince(peer.connectedAt)
         peerGone(peer)
         peerTasks[addr] = nil
