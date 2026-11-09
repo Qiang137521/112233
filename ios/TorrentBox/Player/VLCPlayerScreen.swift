@@ -94,7 +94,7 @@ final class VLCController: NSObject, ObservableObject, VLCMediaPlayerDelegate {
             self.isBuffering = false
             self.isPlaying = self.player.isPlaying
             if !self.isSeeking { self.position = self.player.position }
-            self.timeText = self.player.time?.stringValue ?? "00:00"
+            self.timeText = self.player.time.stringValue ?? "00:00"
             self.remainingText = self.player.remainingTime?.stringValue ?? "--:--"
         }
     }
