@@ -3,7 +3,7 @@
 原理: 手机放上去压住底托 -> 底托下滑 -> 底托上的两根销子在左右夹臂的 45° 斜槽里走
       -> 两个夹臂同步向内收 -> 夹住手机。拿走手机，打印弹簧把底托拉回去，夹臂张开。
 
-零件 (共 5 个打印件 + 4 颗 M3 自攻螺丝，不需要金属弹簧):
+零件 (共 5 个打印件 + 8 颗电脑风扇螺丝，不需要金属弹簧):
   base   底壳: 背板(背面 4 个安装孔) + 围墙 + 底托导轨 + 弹簧挂柱 + 4 根盖板螺丝柱
   foot   底托: 竖直滑块 + 2 根驱动销 + 前面托手机的托盘 + 顶上一体打印的折线弹簧(套在挂柱上)
   arm_l / arm_r  左右夹臂: 水平滑条(带斜槽) + 夹爪
@@ -73,10 +73,12 @@ PEG_D = 3.4                # 挂柱直径
 SPR_E = 2000.0             # 材料弹性模量 MPa (PETG≈2000, PLA≈3000) —— 只用于估算弹力
 
 # --- 盖板螺丝 ---
-POST_R = 3.5
-SCREW_PILOT = 2.5          # M3 自攻底孔
-SCREW_CLEAR = 3.3
-SCREW_HEAD = 6.0           # 沉头直径
+# 面板也用电脑风扇螺丝 (外径约 4.7, 长 10, 圆头)：从背面穿过背板，拧进面板背后伸下来的螺丝柱
+POST_R = 4.0               # 螺丝柱半径 (Ø8，底孔 4.0 时壁厚 2)
+SCREW_PILOT = 4.0          # 螺丝柱底孔 (同安装孔)
+SCREW_CLEAR = 5.3          # 背板上的过孔
+SCREW_HEAD = 8.5           # 背面沉孔直径 (风扇螺丝圆头约 7~8，拿卡尺量一下，大了就改这里)
+SCREW_HEAD_DEPTH = 5.0     # 沉孔深度: 螺丝头整个藏进背板里，背面是平的
 
 # --- 圆角 (避免直角应力集中 / 硌手机) ---
 R_EDGE = 1.0               # 夹爪、托盘外露棱边
@@ -137,7 +139,8 @@ def ring_y(stretch):
 PEG_Y = ring_y(SPR_PRE)                              # 挂柱位置 (固定在底壳上)
 H = PEG_Y + RING_OD / 2 + 0.6 + WALL                 # 外壳高
 
-POSTS = [(sx * (HX - 8.0), 6.5) for sx in (-1, 1)] + [(sx * 9.0, H - 6.5) for sx in (-1, 1)]   # 上面两颗往中间收，让出挂环位置
+POSTS = [(sx * (IN_X - POST_R - 0.8), WALL + POST_R + 0.5) for sx in (-1, 1)] + \
+        [(sx * 9.0, H - WALL - POST_R - 0.5) for sx in (-1, 1)]   # 上面两颗往中间收，让出挂环位置
 
 
 # ======================= 工具函数 =======================
@@ -206,12 +209,10 @@ def make_base():
     m = outer.extrude(BASE_T) + (outer - inner).extrude(Z_C0 - BASE_T).translate([0, 0, BASE_T])
 
     # 盖板螺丝柱
-    for (x, y) in POSTS:
-        m += cyl(x, y, BASE_T, Z_C0, 2 * POST_R)
     # 底托两侧导轨 (只在底托层高度)
     for s in (-1, 1):
         x_in, x_out = FOOT_X + CL, IN_X + 0.5
-        m += box(min(s * x_in, s * x_out), max(s * x_in, s * x_out), 10.5, RAIL_TOP, BASE_T, Z_F1)
+        m += box(min(s * x_in, s * x_out), max(s * x_in, s * x_out), WALL + 2 * POST_R + 1.5, RAIL_TOP, BASE_T, Z_F1)
     # 底托伸出口 (底墙开口)
     m -= box(-STEM_X - CL - 0.1, STEM_X + CL + 0.1, -1, WALL + 1, BASE_T, Z_A0)
     # 夹臂穿墙口: 左墙开在左臂滑条高度，右墙开在右臂滑条高度
@@ -220,8 +221,9 @@ def make_base():
     # 弹簧挂柱 (一直伸到面板下面，圆环脱不出来)
     m += cyl(RING_X, PEG_Y, BASE_T - 0.1, Z_C0 - CL, PEG_D)
     # 螺丝底孔
-    for (x, y) in POSTS:
-        m -= cyl(x, y, BASE_T + 1.0, Z_C0 + 1, SCREW_PILOT)
+    for (x, y) in POSTS:   # 面板螺丝: 背面沉孔 + 过孔
+        m -= cyl(x, y, -1, BASE_T + 1, SCREW_CLEAR)
+        m -= cyl(x, y, -1, SCREW_HEAD_DEPTH, SCREW_HEAD)
     # 背面安装孔 (从背面开的盲孔)
     for (hx, hy) in MOUNT_HOLES:
         m -= cyl(hx, H / 2 + hy, -1, MOUNT_HOLE_DEPTH, MOUNT_HOLE_D)
@@ -237,13 +239,10 @@ def make_cover():
               (L_BAND[1] + RIB_CL, L_BAND[1] + RIB_CL + RIB)]
     for (y0, y1) in rib_ys:
         m += box(-IN_X + CL, IN_X - CL, y0, y1, Z_A0, Z_C0 + 0.01)
-    for (x, y) in POSTS:   # 筋避开螺丝柱
-        m -= cyl(x, y, Z_A0 - 1, Z_C0, 2 * POST_R + 2 * CL)
-    # 沉头螺丝孔
+    # 螺丝柱: 从面板背面伸到背板上，底孔是盲孔，面板正面不开孔
     for (x, y) in POSTS:
-        m -= cyl(x, y, Z_C0 - 1, Z_C1 + 1, SCREW_CLEAR)
-        m -= Manifold.cylinder(SCREW_HEAD / 2 - SCREW_CLEAR / 2 + 0.01, SCREW_CLEAR / 2, SCREW_HEAD / 2) \
-            .translate([x, y, Z_C1 - (SCREW_HEAD / 2 - SCREW_CLEAR / 2)])
+        m += cyl(x, y, BASE_T, Z_C0 + 0.01, 2 * POST_R)
+        m -= cyl(x, y, BASE_T - 1, Z_C0 + 0.5, SCREW_PILOT)
     # 正面贴防滑垫的浅槽 (0.6 深)
     m -= rrect(W - 14, H - 24, 4, 0, H / 2).extrude(1.0).translate([0, 0, Z_C1 - 0.6])
     return m
