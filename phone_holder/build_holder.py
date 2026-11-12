@@ -1,11 +1,11 @@
 """重力手机夹 (3D 打印) —— 参数化结构模型，输出 STL。
 
 原理: 手机放上去压住底托 -> 底托下滑 -> 底托上的两根销子在左右夹臂的 45° 斜槽里走
-      -> 两个夹臂同步向内收 -> 夹住手机。拿走手机，弹簧把底托顶回去，夹臂张开。
+      -> 两个夹臂同步向内收 -> 夹住手机。拿走手机，打印弹簧把底托拉回去，夹臂张开。
 
-零件 (共 5 个打印件 + 2 根小弹簧 + 4 颗 M3 自攻螺丝):
-  base   底壳: 背板(背面 4 个安装孔) + 围墙 + 底托导轨 + 弹簧槽 + 4 根盖板螺丝柱
-  foot   底托: 竖直滑块 + 2 根驱动销 + 前面托手机的托盘
+零件 (共 5 个打印件 + 4 颗 M3 自攻螺丝，不需要金属弹簧):
+  base   底壳: 背板(背面 4 个安装孔) + 围墙 + 底托导轨 + 弹簧挂柱 + 4 根盖板螺丝柱
+  foot   底托: 竖直滑块 + 2 根驱动销 + 前面托手机的托盘 + 顶上一体打印的折线弹簧(套在挂柱上)
   arm_l / arm_r  左右夹臂: 水平滑条(带斜槽) + 夹爪
   cover  面板: 手机靠的面 + 背面 3 根导向筋(夹臂在筋之间滑)
 
@@ -32,7 +32,7 @@ MOUNT_HOLE_D = 4.0        # M3 热熔铜螺母用 4.0；直接拧 M3 自攻用 2
 MOUNT_HOLE_DEPTH = 4.0    # 盲孔深度 (背板厚 6，不会打穿到机构里)
 
 # --- 外壳 ---
-W, H = 54.0, 82.0          # 外壳宽 / 高
+W = 54.0                   # 外壳宽 (外壳高 H 由弹簧长度自动算出)
 CORNER_R = 5.0
 WALL = 2.5                 # 围墙厚
 CL = 0.3                   # 滑动间隙 (打印太紧就调到 0.35~0.4)
@@ -57,9 +57,16 @@ JAW_Y = (16.0, 64.0)       # 夹爪高度范围
 JAW_W = 5.0                # 夹爪厚度
 LIP = 3.0                  # 夹爪前沿内勾 (45° 斜面，免支撑)
 
-# --- 弹簧 (圆珠笔弹簧即可，越软越好) ---
-SPRING_D = 5.0             # 弹簧外径上限
-SPRING_X = 8.5
+# --- 打印弹簧: 底托顶上的折线(蛇形)拉簧，上端圆环套在底壳挂柱上 ---
+SPR_N = 8                  # 折条根数 (越多越软、越不容易疲劳，但更占高度)
+SPR_T = 0.8                # 折条厚度 (= 0.4 喷嘴 2 条线；改 1.0 变硬约 2 倍)
+SPR_GAP = 0.8              # 折条间隙 (打印状态)
+SPR_HALF = 11.0            # 折条半长 (总长 22)
+SPR_CONN = 1.5             # 折条两端连接块宽
+SPR_PRE = 3.0              # 预拉伸: 装配时把圆环往上拉 3 mm 套到挂柱上，保证夹臂能完全弹开
+RING_OD, RING_ID = 6.4, 3.6
+PEG_D = 3.0                # 挂柱直径
+SPR_E = 2000.0             # 材料弹性模量 MPa (PETG≈2000, PLA≈3000) —— 只用于估算弹力
 
 # --- 盖板螺丝 ---
 POST_R = 3.5
@@ -84,7 +91,8 @@ Z_FRONT = Z_LIP + 2.0
 BAND = TRAVEL + SLOT_W + 5.0
 RIB = 4.0
 RIB_CL = 0.4
-R_BAND = (H / 2 - RIB / 2 - RIB_CL - BAND - 1.0, H / 2 - RIB / 2 - RIB_CL - 1.0)   # 右臂滑条 y
+MID = 41.0                 # 夹臂布局中心高度
+R_BAND = (MID - RIB / 2 - RIB_CL - BAND - 1.0, MID - RIB / 2 - RIB_CL - 1.0)   # 右臂滑条 y
 L_BAND = (R_BAND[1] + 2 * RIB_CL + RIB, R_BAND[1] + 2 * RIB_CL + RIB + BAND)       # 左臂滑条 y
 # 驱动销 (底托上, 张开状态) 在各自滑条上部
 PIN_L = (-PIN_X, L_BAND[1] - SLOT_W / 2 - 2.5)
@@ -97,6 +105,19 @@ TRAY_X = 20.0
 TRAY_Y = (-8.0, -4.0)                 # 托盘 (张开状态)，顶面 y=-4 是手机底边落点
 SEAT_FLAT = 8.0                       # 托盘平面段深度，之后 45° 斜坡把手机推向面板
 JAW_OPEN = HX + JAW_GAP + ARM_TRAVEL  # 张开时夹爪内表面 |x|
+
+# 打印弹簧 (底托坐标系, 张开状态)
+SPR_Y0 = FOOT_Y[1] + 1.5                             # 第一根折条底面
+RING_X = -SPR_HALF + RING_OD / 2
+
+
+def ring_y(stretch):
+    top = SPR_Y0 + SPR_N * SPR_T + (SPR_N - 1) * SPR_GAP + stretch * (SPR_N - 1) / SPR_N
+    return top + 1.0 + stretch / SPR_N + RING_OD / 2
+
+
+PEG_Y = ring_y(SPR_PRE)                              # 挂柱位置 (固定在底壳上)
+H = PEG_Y + RING_OD / 2 + 0.6 + WALL                 # 外壳高
 
 POSTS = [(sx * (HX - 8.0), y) for sx in (-1, 1) for y in (6.5, H - 6.5)]
 
@@ -148,18 +169,14 @@ def make_base():
     # 底托两侧导轨 (只在底托层高度)
     for s in (-1, 1):
         x_in, x_out = FOOT_X + CL, IN_X + 0.5
-        m += box(min(s * x_in, s * x_out), max(s * x_in, s * x_out), 10.5, FOOT_Y[1] + 3, BASE_T, Z_F1)
+        m += box(min(s * x_in, s * x_out), max(s * x_in, s * x_out), 10.5, FOOT_Y[1], BASE_T, Z_F1)
     # 底托伸出口 (底墙开口)
     m -= box(-STEM_X - CL - 0.1, STEM_X + CL + 0.1, -1, WALL + 1, BASE_T, Z_A0)
     # 夹臂穿墙口: 左墙开在左臂滑条高度，右墙开在右臂滑条高度
     m -= box(-HX - 1, -IN_X + 0.1, L_BAND[0] - RIB_CL, L_BAND[1] + RIB_CL, Z_F1 + 0.1, Z_C0 + 1)
     m -= box(IN_X - 0.1, HX + 1, R_BAND[0] - RIB_CL, R_BAND[1] + RIB_CL, Z_F1 + 0.1, Z_C0 + 1)
-    # 弹簧: 背板上浅槽 + 底墙上的定位凸块
-    spring_zc = BASE_T - 0.5 + SPRING_D / 2
-    for s in (-1, 1):
-        x = s * SPRING_X
-        m -= box(x - SPRING_D / 2 - 0.3, x + SPRING_D / 2 + 0.3, WALL - 0.1, FOOT_Y[0], BASE_T - 0.5, BASE_T + 0.1)
-        m += box(x - 1.2, x + 1.2, WALL - 0.5, WALL + 3.0, BASE_T - 0.5, spring_zc + 1.2)
+    # 弹簧挂柱 (一直伸到面板下面，圆环脱不出来)
+    m += cyl(RING_X, PEG_Y, BASE_T - 0.1, Z_C0 - CL, PEG_D)
     # 螺丝底孔
     for (x, y) in POSTS:
         m -= cyl(x, y, BASE_T + 1.0, Z_C0 + 1, SCREW_PILOT)
@@ -190,17 +207,34 @@ def make_cover():
     return m
 
 
-def make_foot():
-    """张开状态 (d=0) 的底托"""
+def make_spring(stretch):
+    """底托顶上的折线拉簧 (底托坐标系)。stretch=0 是打印状态；装配预览里按拉伸量把间距均匀拉开 (近似)。"""
+    p = SPR_T + SPR_GAP + stretch / SPR_N
+    z0, z1 = Z_F0, Z_F1
+    m = box(-SPR_HALF, -SPR_HALF + SPR_CONN, FOOT_Y[1] - 1.0, SPR_Y0 + 0.01, z0, z1)       # 底部连接到底托
+    for i in range(SPR_N):
+        y = SPR_Y0 + i * p
+        m += box(-SPR_HALF, SPR_HALF, y, y + SPR_T, z0, z1)
+        if i < SPR_N - 1:                                                                   # 两端交替连接
+            x0 = SPR_HALF - SPR_CONN if i % 2 == 0 else -SPR_HALF
+            m += box(x0, x0 + SPR_CONN, y, y + p + 0.01, z0, z1)
+    y_top = SPR_Y0 + (SPR_N - 1) * p + SPR_T
+    ry = ring_y(stretch)
+    x0 = -SPR_HALF if (SPR_N - 1) % 2 == 1 else SPR_HALF - SPR_CONN
+    m += box(x0, x0 + SPR_CONN, y_top - 0.01, ry, z0, z1)
+    m += box(RING_X - 1.0, RING_X + 1.0, y_top - 0.01, ry, z0, z1)
+    m += cyl(RING_X, ry, z0, z1, RING_OD)
+    m -= cyl(RING_X, ry, z0 - 1, z1 + 1, RING_ID)
+    return m
+
+
+def make_foot(stretch=0.0):
+    """张开状态 (d=0) 的底托；stretch = 弹簧拉伸量"""
     m = rrect(2 * FOOT_X, FOOT_Y[1] - FOOT_Y[0], 2.0, 0, (FOOT_Y[0] + FOOT_Y[1]) / 2).extrude(FOOT_T).translate([0, 0, Z_F0])
     m += box(-STEM_X, STEM_X, TRAY_Y[0] + 1, FOOT_Y[0] + 2, Z_F0, Z_F1)
     # 驱动销 (向前伸进夹臂斜槽)
     for (x, y) in (PIN_L, PIN_R):
         m += cyl(x, y, Z_F1 - 0.5, Z_A1 - 0.3, PIN_D)
-    # 弹簧定位凸块 (底托下沿)
-    spring_zc = BASE_T - 0.5 + SPRING_D / 2
-    for s in (-1, 1):
-        m += box(s * SPRING_X - 1.2, s * SPRING_X + 1.2, FOOT_Y[0] - 4.0, FOOT_Y[0] + 0.5, Z_F0, spring_zc + 1.2)
     # 托盘: 平面段 + 45° 斜坡前沿 (斜坡把手机底边推向面板，打印免支撑)
     y_top = TRAY_Y[1]
     z_slope = Z_C1 + SEAT_FLAT
@@ -212,6 +246,7 @@ def make_foot():
     corner = CrossSection.square([2 * TRAY_X, Z_FRONT - Z_F0 + 4]).translate([-TRAY_X, Z_F0 - 4]).offset(-4).offset(4)
     tray ^= poly_xz(corner.to_polygons()[0].tolist(), TRAY_Y[0] - 1, y_top + lip_h + 1)
     m += tray
+    m += make_spring(stretch)
     return m
 
 
@@ -237,7 +272,7 @@ def make_arm(side):
 
 
 def foot_at(d):
-    return make_foot().translate([0, -d, 0])
+    return make_foot(SPR_PRE + d).translate([0, -d, 0])
 
 
 def arm_at(side, d):
@@ -266,8 +301,17 @@ def check():
     print("干涉检查:", "通过 (全行程 0 干涉)" if ok else "有问题")
     print(f"可夹手机宽度: {2 * (JAW_OPEN - ARM_TRAVEL):.0f} ~ {2 * JAW_OPEN:.0f} mm  (含壳)")
     print(f"可夹厚度: <= {PHONE_T:.0f} mm,  底托行程 {TRAVEL:.0f} mm,  夹紧力 ≈ {1 / (2 * RATIO):.2f} × 手机重量 (每侧, 不计摩擦/弹簧)")
-    sp_open = FOOT_Y[0] - 4.0 - (WALL + 3.0)
-    print(f"弹簧: 外径 <= {SPRING_D:.0f}, 装配长度 {FOOT_Y[0] - WALL:.1f} (张开) / {FOOT_Y[0] - WALL - TRAVEL:.1f} (夹到最紧), 压并长度需 < {FOOT_Y[0] - WALL - TRAVEL:.1f}")
+    L = 2 * SPR_HALF - SPR_CONN
+    k = SPR_E * FOOT_T * SPR_T ** 3 / L ** 3 / SPR_N           # 每根折条按两端导向梁计
+    s_max = SPR_PRE + TRAVEL
+    strain = 3 * SPR_T * (s_max / SPR_N) / L ** 2
+    d75 = (JAW_OPEN - 37.5) / RATIO
+    print(f"外壳: {W:.0f} x {H:.1f} mm")
+    print(f"打印弹簧: 刚度≈{k:.3f} N/mm, 张开时预紧≈{k * SPR_PRE * 102:.0f} gf, 夹 75mm 手机时≈{k * (SPR_PRE + d75) * 102:.0f} gf, "
+          f"最紧≈{k * s_max * 102:.0f} gf;  最大应变≈{strain * 100:.2f}% (PETG 建议 < 1.5%)")
+    if strain > 0.015:
+        print("  警告: 弹簧应变偏大，增加 SPR_N 或减小 SPR_T")
+        ok = False
     return ok
 
 
@@ -287,7 +331,7 @@ def print_parts():
         return m.translate([0, 0, -lo])
     base = on_bed(make_base())                                   # 背面贴床
     cover = on_bed(make_cover().transform(ROT_FLIP))             # 正面贴床，筋朝上
-    foot = on_bed(make_foot())                                   # 背面贴床，销子朝上
+    foot = on_bed(make_foot())                                   # 背面贴床，销子朝上，弹簧平躺
     arm_l = on_bed(make_arm(-1))                                 # 滑条底面贴床，夹爪朝上
     arm_r = on_bed(make_arm(1))
     return {"base": base, "cover": cover, "foot": foot, "arm_l": arm_l, "arm_r": arm_r}
