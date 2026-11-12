@@ -46,8 +46,9 @@ COVER_T = 2.5              # 面板厚
 # --- 机构 ---
 TRAVEL = 14.0              # 底托行程
 RATIO = 1.0                # 夹臂单边行程 / 底托行程 (1.0 = 45° 斜槽；改小夹紧力更大但开口变小)
-PIN_D = 4.0                # 驱动销直径
-SLOT_W = 4.5               # 斜槽宽
+PIN_D = 5.0                # 驱动销直径 (竖着打印，根部是层间受力，所以做粗)
+SLOT_W = 5.5               # 斜槽宽
+SLOT_MARGIN = 3.0          # 斜槽两端到滑条边的肉厚 (斜槽两端兼作限位，会被撞)
 PIN_X = 6.0                # 两根驱动销离中线距离
 JAW_GAP = 2.0              # 夹爪收到最紧时离外壳侧面的间隙
 
@@ -65,8 +66,8 @@ SPR_STUB = 2.5             # 弹簧和底托 / 挂环之间的连接段长度
 SPR_STUB_W = 1.6           # 连接段宽
 SPR_FILLET = 1.0           # 连接段根部内圆角
 SPR_PRE = 4.0              # 预拉伸: 装配时把圆环往上拉 4 mm 套到挂柱上，保证夹臂能完全弹开
-RING_OD, RING_ID = 6.4, 3.6
-PEG_D = 3.0                # 挂柱直径
+RING_OD, RING_ID = 7.2, 4.0
+PEG_D = 3.4                # 挂柱直径
 SPR_E = 2000.0             # 材料弹性模量 MPa (PETG≈2000, PLA≈3000) —— 只用于估算弹力
 
 # --- 盖板螺丝 ---
@@ -74,6 +75,13 @@ POST_R = 3.5
 SCREW_PILOT = 2.5          # M3 自攻底孔
 SCREW_CLEAR = 3.3
 SCREW_HEAD = 6.0           # 沉头直径
+
+# --- 圆角 (避免直角应力集中 / 硌手机) ---
+R_EDGE = 1.0               # 夹爪、托盘外露棱边
+R_JAW_ROOT = 1.5           # 夹爪根部 (和滑条连接的内角)，受 JAW_GAP 限制
+R_JAW_END = 2.0            # 夹爪上下两端竖棱
+R_BAR = 2.0                # 滑条四角
+R_STEM = 2.0               # 底托下伸杆两端根部
 
 # ======================= 推导尺寸 =======================
 HX = W / 2
@@ -89,18 +97,18 @@ Z_LIP = Z_C1 + PHONE_T               # 夹爪/托盘前沿
 Z_FRONT = Z_LIP + 2.0
 
 # 夹臂滑条带宽 = 斜槽竖向跨度 + 槽宽 + 两边各留 2.5
-BAND = TRAVEL + SLOT_W + 5.0
+BAND = TRAVEL + SLOT_W + 2 * SLOT_MARGIN
 RIB = 4.0
 RIB_CL = 0.4
 MID = 41.0                 # 夹臂布局中心高度
 R_BAND = (MID - RIB / 2 - RIB_CL - BAND - 1.0, MID - RIB / 2 - RIB_CL - 1.0)   # 右臂滑条 y
 L_BAND = (R_BAND[1] + 2 * RIB_CL + RIB, R_BAND[1] + 2 * RIB_CL + RIB + BAND)       # 左臂滑条 y
 # 驱动销 (底托上, 张开状态) 在各自滑条上部
-PIN_L = (-PIN_X, L_BAND[1] - SLOT_W / 2 - 2.5)
-PIN_R = (PIN_X, R_BAND[1] - SLOT_W / 2 - 2.5)
+PIN_L = (-PIN_X, L_BAND[1] - SLOT_W / 2 - SLOT_MARGIN)
+PIN_R = (PIN_X, R_BAND[1] - SLOT_W / 2 - SLOT_MARGIN)
 
 FOOT_X = PIN_X + 6.0                  # 底托滑块半宽
-FOOT_Y = (PIN_R[1] - 4.75, PIN_L[1] + 4.75)
+FOOT_Y = (PIN_R[1] - PIN_D / 2 - 3.0, PIN_L[1] + PIN_D / 2 + 3.0)
 STEM_X = 5.0                          # 底托下伸杆半宽
 TRAY_X = 20.0
 TRAY_Y = (-8.0, -4.0)                 # 托盘 (张开状态)，顶面 y=-4 是手机底边落点
@@ -146,6 +154,30 @@ def rrect(w, h, r, cx=0.0, cy=0.0):
 def slot2d(p0, p1, w):
     return CrossSection.batch_hull([CrossSection.circle(w / 2).translate(list(p0)),
                                     CrossSection.circle(w / 2).translate(list(p1))])
+
+
+def sq2(x0, x1, y0, y1):
+    return CrossSection.square([x1 - x0, y1 - y0]).translate([x0, y0])
+
+
+def round_all(cs, r):
+    """2D 圆角: 先开运算(凸角) 再闭运算(凹角)"""
+    return cs.offset(-r).offset(r).offset(r).offset(-r)
+
+
+def fillet_only(cs, r):
+    """2D 只给凹角(内角)加圆角"""
+    return cs.offset(r).offset(-r)
+
+
+def ext_xz(cs, y0, y1):
+    """XZ 截面 (x, z) 沿 Y 拉伸"""
+    return cs.extrude(y1 - y0).transform(np.array([[1, 0, 0, 0], [0, 0, 1, y0], [0, 1, 0, 0]], dtype=float))
+
+
+def ext_yz(cs, x0, x1):
+    """YZ 截面 (y, z) 沿 X 拉伸"""
+    return cs.extrude(x1 - x0).transform(np.array([[0, 0, 1, x0], [1, 0, 0, 0], [0, 1, 0, 0]], dtype=float))
 
 
 def poly_yz(pts, x0, x1):
@@ -254,22 +286,32 @@ def make_spring(stretch):
 
 def make_foot(stretch=0.0):
     """张开状态 (d=0) 的底托；stretch = 弹簧拉伸量"""
-    m = rrect(2 * FOOT_X, FOOT_Y[1] - FOOT_Y[0], 2.0, 0, (FOOT_Y[0] + FOOT_Y[1]) / 2).extrude(FOOT_T).translate([0, 0, Z_F0])
-    m += box(-STEM_X, STEM_X, TRAY_Y[0] + 1, FOOT_Y[0] + 2, Z_F0, Z_F1)
-    # 驱动销 (向前伸进夹臂斜槽)
-    for (x, y) in (PIN_L, PIN_R):
-        m += cyl(x, y, Z_F1 - 0.5, Z_A1 - 0.3, PIN_D)
-    # 托盘: 平面段 + 45° 斜坡前沿 (斜坡把手机底边推向面板，打印免支撑)
+    # 托盘: 平面段 + 45° 斜坡前沿 (斜坡把手机底边推向面板，打印免支撑)；外露棱边全部倒圆
     y_top = TRAY_Y[1]
     z_slope = Z_C1 + SEAT_FLAT
     lip_h = Z_FRONT - z_slope - 2.0
-    prof = [(TRAY_Y[0], Z_F0), (y_top, Z_F0), (y_top, z_slope),
-            (y_top + lip_h, z_slope + lip_h), (y_top + lip_h, Z_FRONT), (TRAY_Y[0], Z_FRONT)]
-    tray = poly_yz(prof, -TRAY_X, TRAY_X)
-    # 托盘左右前角倒圆 (俯视 XZ 平面)
+    zb = Z_F0 - 3.0                                   # 先往床下多画一截再切掉，贴床面保持平整
+    prof = CrossSection([[[TRAY_Y[0], zb], [y_top, zb], [y_top, z_slope], [y_top + lip_h, z_slope + lip_h],
+                          [y_top + lip_h, Z_FRONT], [TRAY_Y[0], Z_FRONT]]])
+    prof = round_all(prof, R_EDGE) ^ sq2(-50, 50, Z_F0, 100)
+    tray = ext_yz(prof, -TRAY_X, TRAY_X)
     corner = CrossSection.square([2 * TRAY_X, Z_FRONT - Z_F0 + 4]).translate([-TRAY_X, Z_F0 - 4]).offset(-4).offset(4)
-    tray ^= poly_xz(corner.to_polygons()[0].tolist(), TRAY_Y[0] - 1, y_top + lip_h + 1)
-    m += tray
+    tray ^= ext_xz(corner, TRAY_Y[0] - 1, y_top + lip_h + 1)
+
+    # 滑块 + 下伸杆 + (托盘在这一层的截面)，XY 内角全部倒圆
+    plate = rrect(2 * FOOT_X, FOOT_Y[1] - FOOT_Y[0], 2.0, 0, (FOOT_Y[0] + FOOT_Y[1]) / 2)
+    stem = sq2(-STEM_X, STEM_X, TRAY_Y[0] + 1, FOOT_Y[0] + 1)
+    tray_xy = sq2(-TRAY_X, TRAY_X, TRAY_Y[0], y_top)
+    body = fillet_only(plate + stem + tray_xy, R_STEM)          # 和托盘重叠, 保证连成一体
+    m = body.extrude(FOOT_T).translate([0, 0, Z_F0]) + tray
+    # 下伸杆正面和托盘顶面之间的内角 (YZ)，手机重量压托盘时这里受拉
+    yz = sq2(TRAY_Y[0] + 1, FOOT_Y[0], Z_F0, Z_F1) + (prof ^ sq2(-50, y_top, -100, 100))
+    root = (fillet_only(yz, R_STEM) - yz) ^ sq2(y_top - 0.01, y_top + R_STEM + 0.5, Z_F1 - 0.01, Z_F1 + R_STEM + 0.5)
+    m += ext_yz(root, -STEM_X, STEM_X)
+
+    # 驱动销 (向前伸进夹臂斜槽)
+    for (x, y) in (PIN_L, PIN_R):
+        m += cyl(x, y, Z_F1 - 0.5, Z_A1 - 0.3, PIN_D)
     m += make_spring(stretch)
     return m
 
@@ -279,20 +321,30 @@ def make_arm(side):
     band = L_BAND if side < 0 else R_BAND
     pin = PIN_L if side < 0 else PIN_R
     xj = side * JAW_OPEN                       # 夹爪内表面
-    x_inner = pin[0] - side * (SLOT_W / 2 + 2.5)   # 滑条内端 (靠中线一端)
+    x_inner = pin[0] - side * (SLOT_W / 2 + SLOT_MARGIN)   # 滑条内端 (靠中线一端)
     x_outer = xj + side * JAW_W
-    bar = box(min(x_inner, x_outer), max(x_inner, x_outer), band[0], band[1], Z_A0, Z_A1)
-    # 斜槽: 相对夹臂，销子从 pin 走到 pin + (-side*ARM_TRAVEL, -TRAVEL)
+    xa, xb = min(x_inner, x_outer), max(x_inner, x_outer)
+    bar = rrect(xb - xa, band[1] - band[0], R_BAR, (xa + xb) / 2, (band[0] + band[1]) / 2)
+    # 斜槽: 相对夹臂，销子从 pin 走到 pin + (-side*ARM_TRAVEL, -TRAVEL)，两端是半圆
     p1 = (pin[0] + side * ARM_TRAVEL, pin[1] - TRAVEL)
-    slot = slot2d(pin, p1, SLOT_W).extrude(ARM_T + 2).translate([0, 0, Z_A0 - 1])
-    bar -= slot
-    # 夹爪 (XZ 截面沿 Y 拉伸)，内侧前沿 45° 内勾
+    bar = (bar - slot2d(pin, p1, SLOT_W)).extrude(ARM_T).translate([0, 0, Z_A0])
+
+    # 夹爪 XZ 截面: 内侧前沿 45° 内勾；所有棱边倒圆 (不硌手机)，贴床面保持平整
     zl = Z_FRONT - 2.0
-    prof = [(x_outer, Z_A0), (xj, Z_A0), (xj, zl - LIP), (xj - side * LIP, zl), (xj - side * LIP, Z_FRONT), (x_outer, Z_FRONT)]
+    zb = Z_A0 - 3.0
+    pts = [(x_outer, zb), (xj, zb), (xj, zl - LIP), (xj - side * LIP, zl), (xj - side * LIP, Z_FRONT), (x_outer, Z_FRONT)]
     if side > 0:
-        prof = prof[::-1]
-    jaw = poly_xz(prof, JAW_Y[0], JAW_Y[1])
-    return bar + jaw
+        pts = pts[::-1]
+    jaw_cs = round_all(CrossSection([[list(p) for p in pts]]), R_EDGE) ^ sq2(-100, 100, Z_A0, 100)
+    jaw = ext_xz(jaw_cs, JAW_Y[0], JAW_Y[1])
+    # 夹爪上下两端的竖棱倒圆
+    xs = sorted([x_outer, xj - side * LIP])
+    jaw ^= rrect(xs[1] - xs[0], JAW_Y[1] - JAW_Y[0], R_JAW_END, sum(xs) / 2, sum(JAW_Y) / 2).extrude(100)
+    # 夹爪根部内角 (手机把夹爪往外撑时这里受拉)：XZ 截面里滑条顶面和夹爪内表面之间加圆角
+    bar_xz = sq2(min(xj, xj - side * 8), max(xj, xj - side * 8), Z_A0, Z_A1) + sq2(min(xj, x_outer), max(xj, x_outer), Z_A0, Z_FRONT - 5)
+    root = (fillet_only(bar_xz, R_JAW_ROOT) - bar_xz) ^ sq2(min(xj, xj - side * 3), max(xj, xj - side * 3), Z_A1 - 0.01, Z_A1 + 3)
+    y0, y1 = max(band[0], JAW_Y[0]) + R_BAR, min(band[1], JAW_Y[1]) - R_BAR
+    return bar + jaw + ext_xz(root, y0, y1)
 
 
 def foot_at(d):
