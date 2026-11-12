@@ -58,12 +58,13 @@ JAW_W = 5.0                # 夹爪厚度
 LIP = 3.0                  # 夹爪前沿内勾 (45° 斜面，免支撑)
 
 # --- 打印弹簧: 底托顶上的折线(蛇形)拉簧，上端圆环套在底壳挂柱上 ---
-SPR_N = 8                  # 折条根数 (越多越软、越不容易疲劳，但更占高度)
-SPR_T = 0.8                # 折条厚度 (= 0.4 喷嘴 2 条线；改 1.0 变硬约 2 倍)
-SPR_GAP = 0.8              # 折条间隙 (打印状态)
-SPR_HALF = 11.0            # 折条半长 (总长 22)
-SPR_CONN = 1.5             # 折条两端连接块宽
-SPR_PRE = 3.0              # 预拉伸: 装配时把圆环往上拉 3 mm 套到挂柱上，保证夹臂能完全弹开
+SPR_N = 4                  # 折条根数 (必须是偶数；越多越软、应变越小，但更占高度)
+SPR_T = 1.2                # 折条厚度 (= 0.4 喷嘴 3 条线；刚度 ∝ 厚度³)
+SPR_GAP = 1.2              # 折条间隙 (打印状态)；转弯是半圆 U 形弯，内半径 = (厚度+间隙)/2 - 厚度/2
+SPR_STUB = 2.5             # 弹簧和底托 / 挂环之间的连接段长度
+SPR_STUB_W = 1.6           # 连接段宽
+SPR_FILLET = 1.0           # 连接段根部内圆角
+SPR_PRE = 4.0              # 预拉伸: 装配时把圆环往上拉 4 mm 套到挂柱上，保证夹臂能完全弹开
 RING_OD, RING_ID = 6.4, 3.6
 PEG_D = 3.0                # 挂柱直径
 SPR_E = 2000.0             # 材料弹性模量 MPa (PETG≈2000, PLA≈3000) —— 只用于估算弹力
@@ -107,19 +108,26 @@ SEAT_FLAT = 8.0                       # 托盘平面段深度，之后 45° 斜�
 JAW_OPEN = HX + JAW_GAP + ARM_TRAVEL  # 张开时夹爪内表面 |x|
 
 # 打印弹簧 (底托坐标系, 张开状态)
-SPR_Y0 = FOOT_Y[1] + 1.5                             # 第一根折条底面
+SPR_HALF = IN_X - 1.0                                # 弹簧半宽: 横向铺满壳内 (导轨只在下方，不挡弹簧)
+SPR_Y0 = FOOT_Y[1] + SPR_STUB                        # 第一根折条底面
+RAIL_TOP = FOOT_Y[1] - TRAVEL - 1.0                  # 底托导轨上端 (底托到最低时弹簧也碰不到导轨)
+assert SPR_N % 2 == 0
 RING_X = -SPR_HALF + RING_OD / 2
 
 
+def spr_pitch(stretch):
+    return SPR_T + SPR_GAP + stretch / (SPR_N - 1)
+
+
 def ring_y(stretch):
-    top = SPR_Y0 + SPR_N * SPR_T + (SPR_N - 1) * SPR_GAP + stretch * (SPR_N - 1) / SPR_N
-    return top + 1.0 + stretch / SPR_N + RING_OD / 2
+    top = SPR_Y0 + (SPR_N - 1) * spr_pitch(stretch) + SPR_T
+    return top + SPR_STUB + RING_OD / 2
 
 
 PEG_Y = ring_y(SPR_PRE)                              # 挂柱位置 (固定在底壳上)
 H = PEG_Y + RING_OD / 2 + 0.6 + WALL                 # 外壳高
 
-POSTS = [(sx * (HX - 8.0), y) for sx in (-1, 1) for y in (6.5, H - 6.5)]
+POSTS = [(sx * (HX - 8.0), 6.5) for sx in (-1, 1)] + [(sx * 9.0, H - 6.5) for sx in (-1, 1)]   # 上面两颗往中间收，让出挂环位置
 
 
 # ======================= 工具函数 =======================
@@ -169,7 +177,7 @@ def make_base():
     # 底托两侧导轨 (只在底托层高度)
     for s in (-1, 1):
         x_in, x_out = FOOT_X + CL, IN_X + 0.5
-        m += box(min(s * x_in, s * x_out), max(s * x_in, s * x_out), 10.5, FOOT_Y[1], BASE_T, Z_F1)
+        m += box(min(s * x_in, s * x_out), max(s * x_in, s * x_out), 10.5, RAIL_TOP, BASE_T, Z_F1)
     # 底托伸出口 (底墙开口)
     m -= box(-STEM_X - CL - 0.1, STEM_X + CL + 0.1, -1, WALL + 1, BASE_T, Z_A0)
     # 夹臂穿墙口: 左墙开在左臂滑条高度，右墙开在右臂滑条高度
@@ -208,24 +216,40 @@ def make_cover():
 
 
 def make_spring(stretch):
-    """底托顶上的折线拉簧 (底托坐标系)。stretch=0 是打印状态；装配预览里按拉伸量把间距均匀拉开 (近似)。"""
-    p = SPR_T + SPR_GAP + stretch / SPR_N
-    z0, z1 = Z_F0, Z_F1
-    m = box(-SPR_HALF, -SPR_HALF + SPR_CONN, FOOT_Y[1] - 1.0, SPR_Y0 + 0.01, z0, z1)       # 底部连接到底托
-    for i in range(SPR_N):
-        y = SPR_Y0 + i * p
-        m += box(-SPR_HALF, SPR_HALF, y, y + SPR_T, z0, z1)
-        if i < SPR_N - 1:                                                                   # 两端交替连接
-            x0 = SPR_HALF - SPR_CONN if i % 2 == 0 else -SPR_HALF
-            m += box(x0, x0 + SPR_CONN, y, y + p + 0.01, z0, z1)
-    y_top = SPR_Y0 + (SPR_N - 1) * p + SPR_T
+    """底托顶上的蛇形拉簧 (底托坐标系)。转弯是半圆 U 形弯，连接处带内圆角，避免直角应力集中开裂。
+    stretch=0 是打印状态；装配预览里按拉伸量把间距均匀拉开 (近似)。"""
+    p = spr_pitch(stretch)
+    t, lh = SPR_T, SPR_HALF
+    r_in, r_out = p / 2 - t / 2, p / 2 + t / 2
+    xc = lh - r_out                                     # U 形弯圆心 |x|
+    sq = lambda x0, x1, y0, y1: CrossSection.square([x1 - x0, y1 - y0]).translate([x0, y0])
+    cs = CrossSection()
+    ys = [SPR_Y0 + i * p for i in range(SPR_N)]
+    xb = -FOOT_X + 3.0                                  # 底部连接段落在底托板顶边的平直段上
+    for i, y in enumerate(ys):
+        x0 = -xc if (i > 0 and (i - 1) % 2 == 1) or (i < SPR_N - 1 and i % 2 == 1) else (xb if i == 0 else -lh)
+        x1 = xc if (i > 0 and (i - 1) % 2 == 0) or (i < SPR_N - 1 and i % 2 == 0) else lh
+        cs += sq(x0, x1, y, y + t)
+        if i < SPR_N - 1:                               # 半圆 U 形弯，偶数在右，奇数在左
+            s_ = 1 if i % 2 == 0 else -1
+            ring = CrossSection.circle(r_out) - CrossSection.circle(r_in)
+            half = sq(0, r_out + 1, -r_out - 1, r_out + 1) if s_ > 0 else sq(-r_out - 1, 0, -r_out - 1, r_out + 1)
+            cs += (ring ^ half).translate([s_ * xc, y + t / 2 + p / 2])
+    # 连接段 (两端都在左侧折条的自由端) + 根部内圆角
+    w = SPR_STUB_W
+    y_top = ys[-1] + t
     ry = ring_y(stretch)
-    x0 = -SPR_HALF if (SPR_N - 1) % 2 == 1 else SPR_HALF - SPR_CONN
-    m += box(x0, x0 + SPR_CONN, y_top - 0.01, ry, z0, z1)
-    m += box(RING_X - 1.0, RING_X + 1.0, y_top - 0.01, ry, z0, z1)
-    m += cyl(RING_X, ry, z0, z1, RING_OD)
-    m -= cyl(RING_X, ry, z0 - 1, z1 + 1, RING_ID)
-    return m
+    ring_cs = CrossSection.circle(RING_OD / 2).translate([RING_X, ry])
+    bot_core = sq(xb, xb + w, FOOT_Y[1] - 0.5, SPR_Y0 + 0.01) + sq(xb, 0, ys[0], ys[0] + t)
+    bot = bot_core + sq(-FOOT_X, FOOT_X, FOOT_Y[1] - 2.0, FOOT_Y[1])      # 带上一条底托顶边，好给根部倒圆角
+    top = sq(-lh, 0, ys[-1], y_top) + sq(-lh, -lh + w, y_top - 0.01, ry) + ring_cs
+    r = SPR_FILLET
+    for part, core, x0, (ya, yb) in ((bot, bot_core, xb, (FOOT_Y[1] - 0.5, ys[0] + t)),
+                                     (top, top, -lh, (ys[-1], ry))):
+        closed = part.offset(r).offset(-r)              # 闭运算 = 只给内角加圆角
+        cs += (closed ^ sq(x0 - r - 0.5, x0 + w + r + 0.5, ya, yb)) + core
+    cs -= CrossSection.circle(RING_ID / 2).translate([RING_X, ry])
+    return cs.extrude(Z_F1 - Z_F0).translate([0, 0, Z_F0])
 
 
 def make_foot(stretch=0.0):
@@ -301,7 +325,7 @@ def check():
     print("干涉检查:", "通过 (全行程 0 干涉)" if ok else "有问题")
     print(f"可夹手机宽度: {2 * (JAW_OPEN - ARM_TRAVEL):.0f} ~ {2 * JAW_OPEN:.0f} mm  (含壳)")
     print(f"可夹厚度: <= {PHONE_T:.0f} mm,  底托行程 {TRAVEL:.0f} mm,  夹紧力 ≈ {1 / (2 * RATIO):.2f} × 手机重量 (每侧, 不计摩擦/弹簧)")
-    L = 2 * SPR_HALF - SPR_CONN
+    L = 2 * (SPR_HALF - (SPR_T + SPR_GAP) / 2 - SPR_T / 2)
     k = SPR_E * FOOT_T * SPR_T ** 3 / L ** 3 / SPR_N           # 每根折条按两端导向梁计
     s_max = SPR_PRE + TRAVEL
     strain = 3 * SPR_T * (s_max / SPR_N) / L ** 2
